@@ -20,25 +20,6 @@ let
     ;
 
   cfg = config.kalyx.monitors;
-  mon = builtins.foldl' (acc: attrs: acc // attrs) {} ([ cfg.defaultMonitor ] ++ cfg.monitors);
-
-  bitdepth = if mon.bitdepth != 8 then ",bitdepth,10" else "";
-  mirror = if mon.mirror != null then ",mirror,${mon.mirror}" else "";
-  position = if mon.position == "automatic" then "auto" else mon.position;
-
-  resolution = if mon.resolution == "maxrefreshrate" then "highrr"
-    else if mon.resolution == "maxresolution" then "highres"
-    else if mon.resolution == "preffered" then mon.resolution
-    else "${mon.resolution}@${toString mon.framerate}" # The assertion supplants checking `mon.framerate != null` here.
-    ;
-
-  rotation = let add = if mon.flipped then 4 else 0; mr = mon.rotation; in (
-    if mr == 0 then (toString (add + 0))
-    else if mr == 90 then (toString (add + 1))
-    else if mr == 180 then (toString (add + 2))
-    else if mr == 270 then (toString (add + 3))
-    else "0"
-  );
 in
 {
   # TODO: add automatic TTY adjustments.
@@ -82,7 +63,7 @@ in
       }
       {
         # Check if refreshRate is unset, and error when using a manual resolution
-        assertion = (builtins.any (bool: bool == true) (if mon.framerate == null then map (res: res == mon.resolution) [ "maxresolution" "maxrefreshrate" "preffered" ] else [true]));
+        assertion = !(builtins.any (bool: bool == false) (map (mon: if mon.framerate == null then builtins.any (res: res == mon.resolution) [ "maxresolution" "maxrefreshrate" "preffered" ] else true) cfg.monitors));
         message = ''
           KALYX ERROR:
           Manual screen resolution requires setting a refresh rate.
@@ -92,13 +73,35 @@ in
 
     # Hyprland
     wayland.windowManager.hyprland.settings = {
-      monitor = if mon.disable then "${mon.adapter},disable" else
-        "${mon.adapter},${resolution},${position},${toString mon.scale},transform,${rotation}${mirror}${bitdepth}"
-        ;
+      monitor = map (mon:
+        let
+          bitdepth = if mon.bitdepth != 8 then ",bitdepth,10" else "";
+          mirror = if mon.mirror != null then ",mirror,${mon.mirror}" else "";
+          position = if mon.position == "automatic" then "auto" else mon.position;
 
-      workspace = if mon.disable then []
-        else map (ws: "${toString ws},monitor:${mon.adapter},default:${if ws == mon.defaultWorkspace then "true" else "false"}") mon.workspaces
-        ;
+          resolution = if mon.resolution == "maxrefreshrate" then "highrr"
+            else if mon.resolution == "maxresolution" then "highres"
+            else if mon.resolution == "preffered" then mon.resolution
+            else "${mon.resolution}@${toString mon.framerate}" # The assertion supplants checking `mon.framerate != null` here.
+            ;
+
+          rotation = let add = if mon.flipped then 4 else 0; mr = mon.rotation; in (
+            if mr == 0 then (toString (add + 0))
+            else if mr == 90 then (toString (add + 1))
+            else if mr == 180 then (toString (add + 2))
+            else if mr == 270 then (toString (add + 3))
+            else "0"
+          );
+        in
+        if mon.disable then "${mon.adapter},disable" else
+          "${mon.adapter},${resolution},${position},${toString mon.scale},transform,${rotation}${mirror}${bitdepth}"
+      ) ([ cfg.defaultMonitor ] ++ cfg.monitors);
+
+      workspace = lib.concatLists map (mon:
+        if mon.disable then [] else map (ws:
+          "${toString ws},monitor:${mon.adapter},default:${if ws == mon.defaultWorkspace then "true" else "false"}"
+        ) mon.workspaces
+      ) cfg.monitors;
 
       exec-once = [ (let mon = lib.findSingle (x: x.primary) false false cfg.monitors; in if mon != false then "xrandr --output ${mon.adapter} --primary" else "") ];
     };

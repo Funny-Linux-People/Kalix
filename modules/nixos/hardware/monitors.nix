@@ -83,8 +83,6 @@ let
   };
 
   cfg = config.kalyx;
-  # Remove the list surrounding cfg.monitors
-  mon = builtins.foldl' (acc: attrs: acc // attrs) {} cfg.monitors;
 in
 {
   # TODO: add automatic TTY adjustments.
@@ -116,7 +114,7 @@ in
       }
       {
         # Check if refreshRate is unset, and error when using a manual resolution
-        assertion = (builtins.any (bool: bool == true) (if mon.framerate == null then map (res: res == mon.resolution) [ "maxresolution" "maxrefreshrate" "preffered" ] else [true]));
+        assertion = !(builtins.any (bool: bool == false) (map (mon: if mon.refreshRate == null then builtins.any (res: res == mon.resolution) [ "maxresolution" "maxrefreshrate" "preffered" ] else true) cfg.monitors));
         message = ''
           KALYX ERROR:
           Manual screen resolution requires setting a refresh rate.
